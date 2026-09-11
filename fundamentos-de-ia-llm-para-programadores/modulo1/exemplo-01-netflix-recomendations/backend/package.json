@@ -1,0 +1,22 @@
+{
+  "name": "netflix-recommendations-api",
+  "version": "1.0.0",
+  "description": "API de recomendacoes de filmes com treinamento em worker e embeddings no PostgreSQL",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js",
+    "check": "node --check src/server.js && node --check src/trainingWorker.js && node --check scripts/seedUsers.js && node --check scripts/seedMovieWatches.js",
+    "seed:users": "node scripts/seedUsers.js",
+    "seed:watch-history": "node scripts/seedMovieWatches.js"
+  },
+  "dependencies": {
+    "@tensorflow/tfjs": "^4.22.0",
+    "@faker-js/faker": "^9.7.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "pg": "^8.13.1"
+  }
+}
