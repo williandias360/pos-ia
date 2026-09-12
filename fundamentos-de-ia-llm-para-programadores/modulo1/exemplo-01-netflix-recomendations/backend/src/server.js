@@ -7,11 +7,11 @@ import {
   createMovie,
   findMovieById,
   findRecommendations,
-  listMovies,
 } from './repositories/movieRepository.js';
 import { getTrainingStatus, startTraining } from './services/trainingService.js';
 import { listUsers } from './repositories/usersRepository.js';
 import { listUsersWithWatches } from './services/usersService.js';
+import { showListMovies } from './services/movieService.js';
 
 const app = express();
 app.use(cors({ origin: config.corsOrigin }));
@@ -47,8 +47,7 @@ app.get('/health', async (_request, response, next) => {
 
 app.get('/api/movies', async (request, response, next) => {
   try {
-    const filters = readFilters(request.query);
-    const [movies, total] = await Promise.all([listMovies(filters), countMovies()]);
+    const { movies, total, filters } = await showListMovies(request.query);
     response.json({ data: movies, pagination: { total, limit: filters.limit, offset: filters.offset } });
   } catch (error) {
     next(error);
