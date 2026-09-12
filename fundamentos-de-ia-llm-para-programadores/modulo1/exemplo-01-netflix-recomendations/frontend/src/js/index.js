@@ -11,6 +11,10 @@ document.getElementById('btn-training-model').addEventListener('click', async ()
   await doPost('training');
 });
 
+document.getElementById('btn-users-watches').addEventListener('click', async () => {
+  await doGet('users-watches');
+})
+
 
 async function doGet(path) {
   const responseElement = document.getElementById('response');

@@ -10,7 +10,7 @@ import {
   listMovies,
 } from './movieRepository.js';
 import { getTrainingStatus, startTraining } from './trainingService.js';
-import { listUsers } from './usersRepository.js';
+import { listUsers, listUsersWatches } from './usersRepository.js';
 
 const app = express();
 app.use(cors({ origin: config.corsOrigin }));
@@ -109,6 +109,76 @@ app.get('/api/users', async (_request, response, next) => {
   } catch (error) {
     next(error)
   }
+});
+
+app.get('/api/users-watches', async (request, response) => {
+
+  const mapMovie = ({
+    id_movie,
+    title,
+    type,
+    release_year,
+    release_decade,
+    content_age,
+    genres,
+    imdb_rating,
+    popularity_percentile,
+    primary_county,
+    watch_at
+  }) => {
+    return {
+      id_movie: id_movie,
+      title: title,
+      type: type,
+      release_year: release_year,
+      release_decade: release_decade,
+      content_age: content_age,
+      genres: genres,
+      imdb_rating: imdb_rating,
+      popularity_percentile: popularity_percentile,
+      primary_county: primary_county,
+      watch_at: watch_at
+    }
+  };
+
+  const mapUser = ({ user_id, name, age, contry, language }) => {
+    return {
+      user_id,
+      name,
+      age,
+      contry,
+      language,
+      watch_movies: []
+    }
+  };
+
+  const list = [];
+  const usersWatches = await listUsersWatches();
+
+  if (!usersWatches.length)
+    return response.json({ data: list });
+
+  const dicUser = new Map();
+  let countUsers = 0;
+  for (let index = 0; index < usersWatches.length; index++) {
+    const item = usersWatches[index];
+
+    if (dicUser.has(item.user_id)) {
+      const position = dicUser.get(item.user_id);
+      list[position].watch_movies.push(mapMovie(item));
+      continue;
+    }
+
+    const user = mapUser(item);
+    user.watch_movies.push(mapMovie(item));
+    list.push(user);
+
+    dicUser.set(user.user_id, countUsers);
+    countUsers++;
+  }
+
+  return response.json({ data: list });
+
 });
 
 app.use((error, _request, response, _next) => {
