@@ -1,4 +1,4 @@
-import { query } from './db.js';
+import { query } from '../db.js';
 
 function movieColumns(alias = '') {
   const prefix = alias ? `${alias}.` : '';
