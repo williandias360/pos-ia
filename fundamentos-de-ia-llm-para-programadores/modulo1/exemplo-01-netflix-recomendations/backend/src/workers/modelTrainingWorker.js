@@ -5,12 +5,13 @@ let _model = null;
 const TRAINING_EPOCHS = 100;
 
 const WEIGHTS = {
+  IMDB_RATING: 0.8,
   POPULARITY: 0.7,
-  TYPE: 0.6,
-  RELEASE_YEAR: 0.5,
-  GENRES: 0.4,
+  GENRES: 0.6,
+  TYPE: 0.5,
+  USER_AGE: 0.4,
   LANGUAGE: 0.3,
-  USER_AGE: 0.2,
+  RELEASE_YEAR: 0.2,
   CONTENT_AGE: 0.1,
 };
 
@@ -19,35 +20,55 @@ const WEIGHTS = {
 //Exemplo: price = 129.99, minPrice = 39.99, maxPrice = 199.99 -> 0.56
 const normalize = (value, min, max) => (value - min) / ((max - min) || 1);
 
+const finiteNumber = (value) => {
+  if (value === null || value === undefined || value === '') return null;
+
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) ? numericValue : null;
+};
+
+const numericRange = (values) => {
+  const numericValues = values
+    .map(finiteNumber)
+    .filter(value => value !== null);
+
+  if (!numericValues.length) {
+    return { min: 0, max: 1 };
+  }
+
+  return {
+    min: Math.min(...numericValues),
+    max: Math.max(...numericValues),
+  };
+};
+
+const normalizeFeature = (value, range, weight) => {
+  const numericValue = finiteNumber(value);
+  const normalizedValue = numericValue !== null
+    ? normalize(numericValue, range.min, range.max)
+    : 0.5;
+
+  return tf.tensor1d([normalizedValue * weight]);
+};
+
 function makeContext(movies, users) {
-  const user_ages = users.map(user => user.age);
-  //const usersCountries = [...new Set(users.map(user => user.country))];
-  //const languages = [...new Set(users.map(user => user.language))];
+  const genres = [...new Set(
+    movies.flatMap(movie => String(movie.genres ?? '')
+      .split(';')
+      .map(genre => genre.trim())
+      .filter(Boolean))
+  )];
+  const types = [...new Set(
+    movies
+      .map(movie => movie.type)
+      .filter(type => type !== null && type !== undefined && type !== '')
+  )];
 
-  // const releases_years = [...new Set(movies.map(movie => movie.release_year))];
-  // const releases_decades = [...new Set(movies.map(movie => movie.release_decade))];
-  const content_ages = movies.map(movie => movie.content_age);
-
-  const types = [...new Set(movies.map(movie => movie.type))];
-  const genres = [...new Set(movies.map(movie => movie.genres))];
-  const languages_movies = [...new Set(movies.map(movie => movie.language))];
-  const imdb_ratings = movies.map(movie => movie.imdb_rating);
-  const percent_popularities = movies.map(movie => movie.popularity_percentile);
-
-  const minContentAge = Math.min(...content_ages);
-  const maxContentAge = Math.max(...content_ages);
-  const minPercent = Math.min(...percent_popularities);
-  const maxPercent = Math.max(...percent_popularities);
-  const minUserAge = Math.min(...user_ages);
-  const maxUserAge = Math.max(...user_ages);
-
-  // const usersCountriesIndex = Object.fromEntries(usersCountries.map((country, index) => {
-  //   return [country, index]
-  // }));
-
-  // const languagesIndex = Object.fromEntries(languages.map((language, index) => {
-  //   return [language, index]
-  // }));
+  const imdbRatingRange = numericRange(movies.map(movie => movie.imdb_rating));
+  const popularityRange = numericRange(movies.map(movie => movie.popularity_percentile));
+  const releaseYearRange = numericRange(movies.map(movie => movie.release_year));
+  const contentAgeRange = numericRange(movies.map(movie => movie.content_age));
+  const userAgeRange = numericRange(users.map(user => user.age));
 
   const typesIndex = Object.fromEntries(types.map((type, index) => {
     return [type, index]
@@ -57,96 +78,63 @@ function makeContext(movies, users) {
     return [genre, index]
   }));
 
-  const languagesMoviesIndex = Object.fromEntries(languages_movies.filter((language) => language !== null).map((language, index) => {
-    return [language, index]
-  }));
-
-  const imdbRatingsIndex = Object.fromEntries(imdb_ratings.map((imdb_rating, index) => {
-    return [imdb_rating, index]
-  }));
-
-  const percentPopularityIndex = Object.fromEntries(percent_popularities.map((popularity, index) => {
-    return [popularity, index]
-  }));
-
-  //calcular as médias
-  const midContentAge = (minContentAge + maxContentAge) / 2;
-  const midUserAge = (minUserAge + maxUserAge) / 2;
-  const midPercent = (minPercent + maxPercent) / 2;
-  const ageContentSums = {};
-  const ageContentCounts = {};
-  const ageUserSums = {};
-  const ageUserCounts = {};
-
-  users.forEach((user) => {
-    user.watch_movies.forEach((movie) => {
-      ageContentSums[movie.title] = (ageContentSums[movie.title] || 0) + movie.content_age;
-      ageContentCounts[movie.title] = (ageContentCounts[movie.title] || 0) + 1;
-
-      ageUserSums[movie.title] = (ageUserSums[movie.title] || 0) + user.age;
-      ageUserCounts[movie.title] = (ageUserCounts[movie.title] || 0) + 1;
-    })
-  });
-
-  const movieAvgAgeContentNormalize = Object.fromEntries(
-    movies.map((movie) => {
-      const avg = ageContentCounts[movie.title] ?
-        ageContentSums[movie.title] / ageContentCounts[movie.title] : midContentAge
-
-      return [movie.title, normalize(avg, minContentAge, maxContentAge)]
-    })
-  );
-
-  const userAvgAgeNormalize = Object.fromEntries(
-    movies.map((movie) => {
-      const avg = ageUserCounts[movie.title] ?
-        ageUserSums[movie.title] / ageUserCounts[movie.title] : midUserAge;
-
-      return [movie.title, normalize(avg, minUserAge, maxUserAge)]
-    })
-  );
-
-  const dimensions = 2 +
+  const dimensions = 5 +
     types.length +
-    genres.length;// +
-  // languages_movies.length +
-  // imdb_ratings.length +
-  // percent_popularities;
-  // Implement context creation logic here
+    genres.length;
+
   return {
     movies,
     users,
     typesIndex,
     genresIndex,
-    languagesMoviesIndex,
-    imdbRatingsIndex,
-    percentPopularityIndex,
-    minContentAge,
-    maxContentAge,
-    movieAvgAgeContentNormalize,
-    userAvgAgeNormalize,
-    minPercent,
-    maxPercent,
+    imdbRatingRange,
+    popularityRange,
+    releaseYearRange,
+    contentAgeRange,
+    userAgeRange,
     numTypes: types.length,
     numGenres: genres.length,
-    numLanguagesMovies: languages_movies.length,
-    numImdbRatings: imdb_ratings.length,
-    numPercentPopularity: percent_popularities.length,
     dimensions
   };
 }
 
 const oneHotWeighted = (index, length, weight) =>
-  tf.oneHot(index, length).cast('float32').mul(weight);
+  index === undefined
+    ? tf.zeros([length])
+    : tf.oneHot(index, length).cast('float32').mul(weight);
+
+const multiHotWeighted = (values, indexMap, length, weight) => {
+  const vector = new Array(length).fill(0);
+
+  values.forEach(value => {
+    const index = indexMap[value];
+    if (index !== undefined) vector[index] = weight;
+  });
+
+  return tf.tensor1d(vector);
+};
 
 function encodeMovie(movie, context) {
-  const contentAge = tf.tensor1d([
-    (context.movieAvgAgeContentNormalize[movie.title] ?? 0.5) * WEIGHTS.CONTENT_AGE
-  ]);
-
-  const userAge = tf.tensor1d([
-    (context.userAvgAgeNormalize[movie.title] ?? 0.5) * WEIGHTS.USER_AGE
-  ]);
+  const imdbRating = normalizeFeature(
+    movie.imdb_rating,
+    context.imdbRatingRange,
+    WEIGHTS.IMDB_RATING
+  );
+  const popularity = normalizeFeature(
+    movie.popularity_percentile,
+    context.popularityRange,
+    WEIGHTS.POPULARITY
+  );
+  const releaseYear = normalizeFeature(
+    movie.release_year,
+    context.releaseYearRange,
+    WEIGHTS.RELEASE_YEAR
+  );
+  const contentAge = normalizeFeature(
+    movie.content_age,
+    context.contentAgeRange,
+    WEIGHTS.CONTENT_AGE
+  );
 
   const type = oneHotWeighted(
     context.typesIndex[movie.type],
@@ -154,47 +142,55 @@ function encodeMovie(movie, context) {
     WEIGHTS.TYPE
   );
 
-  const genre = oneHotWeighted(
-    context.genresIndex[movie.genres],
+  const genres = multiHotWeighted(
+    String(movie.genres ?? '')
+      .split(';')
+      .map(genre => genre.trim())
+      .filter(Boolean),
+    context.genresIndex,
     context.numGenres,
     WEIGHTS.GENRES
   );
 
-  // const language = oneHotWeighted(
-  //   context.languagesMoviesIndex[movie.languages],
-  //   context.numLanguagesMovies,
-  //   WEIGHTS.LANGUAGE
-  // );
-
   return tf.concat([
+    imdbRating,
+    popularity,
+    releaseYear,
     contentAge,
-    userAge,
+    tf.zeros([1]),
     type,
-    genre
+    genres
   ]);
 }
 
 function encodeUser(user, context) {
-  if (user.watch_movies) {
-    return tf.stack(
-      user.watch_movies.map(movie => encodeMovie(movie, context))
-    )
-      .mean(0)
-      .reshape([
-        1,
-        context.dimensions
-      ])
+  const userAge = normalizeFeature(
+    user.age,
+    context.userAgeRange,
+    WEIGHTS.USER_AGE
+  );
+  const watchedMovies = Array.isArray(user.watch_movies)
+    ? user.watch_movies
+    : [];
+
+  if (!watchedMovies.length) {
+    return tf.concat1d([
+      tf.zeros([4]),
+      userAge,
+      tf.zeros([context.numTypes]),
+      tf.zeros([context.numGenres]),
+    ]).reshape([1, context.dimensions]);
   }
 
-  return tf.concat1d([
-    tf.zeros(1),
-    tf.tensor1d([
-      normalize(user.age, context.minUserAge, context.maxUserAge)
-      * WEIGHTS.USER_AGE
-    ]),
-    tf.zeros([context.numTypes]),
-    tf.zeros([context.numGenres]),
-  ]).reshape([1, context.dimensions])
+  const profile = tf.stack(
+    watchedMovies.map(movie => encodeMovie(movie, context))
+  ).mean(0);
+
+  return tf.concat([
+    profile.slice([0], [4]),
+    userAge,
+    profile.slice([5], [context.dimensions - 5]),
+  ]).reshape([1, context.dimensions]);
 }
 
 function createTrainingData(context) {
@@ -203,12 +199,16 @@ function createTrainingData(context) {
   const users = context.users.slice(0, 10);
   users.forEach(user => {
     const userVector = encodeUser(user, context).dataSync();
+    const watchedMovies = Array.isArray(user.watch_movies)
+      ? user.watch_movies
+      : [];
+
     context.movies.forEach(movie => {
       const movieVector = encodeMovie(movie, context).dataSync();
 
-      const label = user.watch_movies.some(
-        (watch_movie) => watch_movie.title === movie.title ? 1 : 0
-      )
+      const label = watchedMovies.some(
+        watchMovie => watchMovie.title === movie.title
+      ) ? 1 : 0;
 
       //combinar usuario mais o filme
       inputs.push([...userVector, ...movieVector]);
@@ -299,6 +299,7 @@ async function trainModel({ users = [], movies = [] } = {}) {
     return context;
   } catch (err) {
     console.log('err', err);
+    throw err;
   }
 }
 

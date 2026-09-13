@@ -10,7 +10,7 @@ import {
   findMovieById,
   findRecommendations,
 } from './repositories/movieRepository.js';
-import { getTrainingStatus, onTrainingProgress, startTraining } from './services/trainingService.js';
+import { getTrainingStatus, onTrainingProgress, startTraining, onTrainingStart } from './services/trainingService.js';
 import { listUsers } from './repositories/usersRepository.js';
 import { listUsersWithWatches } from './services/usersService.js';
 import { showListMovies } from './services/movieService.js';
@@ -39,6 +39,11 @@ io.on('connection', (socket) => {
 onTrainingProgress((progress) => {
   io.emit('training_progress', progress);
 });
+
+onTrainingStart(() => {
+  io.emit('training_start')
+});
+
 
 function integerQuery(value, fallback, minimum, maximum) {
   const parsed = Number.parseInt(value, 10);

@@ -20,6 +20,11 @@ function createTrainingWorker() {
       trainingEvents.emit('progress', message);
     }
 
+    if (message.type === 'start') {
+      trainingState = { state: 'start', ...message };
+      trainingEvents.emit('start', message);
+    }
+
     if (message.type === 'complete') {
       trainingState = { state: 'complete', ...message };
     }
@@ -60,4 +65,8 @@ export function getTrainingStatus() {
 export function onTrainingProgress(listener) {
   trainingEvents.on('progress', listener);
   return () => trainingEvents.off('progress', listener);
+}
+
+export function onTrainingStart(listener) {
+  trainingEvents.on('start', listener);
 }
