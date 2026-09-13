@@ -30,12 +30,12 @@ export async function listUsersWithWatches() {
     }
   };
 
-  const mapUser = ({ user_id, name, age, contry, language }) => {
+  const mapUser = ({ user_id, name, age, country, language }) => {
     return {
       user_id,
       name,
       age,
-      contry,
+      country,
       language,
       watch_movies: []
     }

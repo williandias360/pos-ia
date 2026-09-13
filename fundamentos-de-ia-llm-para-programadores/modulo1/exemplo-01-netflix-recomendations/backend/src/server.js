@@ -1,4 +1,6 @@
 import express from 'express';
+import http from 'http'
+import { Server } from 'socket.io'
 import cors from 'cors';
 import { config } from './config.js';
 import { initializeDatabase, query } from './db.js';
@@ -8,7 +10,7 @@ import {
   findMovieById,
   findRecommendations,
 } from './repositories/movieRepository.js';
-import { getTrainingStatus, startTraining } from './services/trainingService.js';
+import { getTrainingStatus, onTrainingProgress, startTraining } from './services/trainingService.js';
 import { listUsers } from './repositories/usersRepository.js';
 import { listUsersWithWatches } from './services/usersService.js';
 import { showListMovies } from './services/movieService.js';
@@ -16,6 +18,27 @@ import { showListMovies } from './services/movieService.js';
 const app = express();
 app.use(cors({ origin: config.corsOrigin }));
 app.use(express.json());
+
+const server = http.createServer(app);
+
+const io = new Server(server, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"]
+  }
+});
+
+io.on('connection', (socket) => {
+  console.log(`Usuário conectado: ${socket.id}`);
+
+  socket.on('disconnect', () => {
+    console.log(`Usuário desconectado: ${socket.id}`);
+  });
+});
+
+onTrainingProgress((progress) => {
+  io.emit('training_progress', progress);
+});
 
 function integerQuery(value, fallback, minimum, maximum) {
   const parsed = Number.parseInt(value, 10);
@@ -98,8 +121,15 @@ app.get('/api/training/status', (_request, response) => {
 });
 
 app.post('/api/training', async (request, response) => {
-  const result = await listUsersWithWatches();
-  const training = startTraining(result);
+  const result = await Promise.all([
+    listUsersWithWatches(),
+    showListMovies(request.query)
+  ]);
+
+  const usersWatch = result[0];
+  const { movies } = result[1];
+
+  const training = startTraining({ users: usersWatch, movies });
   response.status(training.state === 'running' ? 202 : 200).json(training);
 });
 
@@ -124,7 +154,7 @@ app.use((error, _request, response, _next) => {
 
 initializeDatabase()
   .then(() => {
-    app.listen(config.port, () => {
+    server.listen(config.port, () => {
       console.log(`API de recomendacoes ouvindo em http://localhost:${config.port}`);
     });
   })

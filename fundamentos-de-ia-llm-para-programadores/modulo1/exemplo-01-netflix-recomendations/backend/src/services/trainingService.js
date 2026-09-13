@@ -1,11 +1,13 @@
 import { Worker } from 'node:worker_threads';
+import { EventEmitter } from 'node:events';
 
 let trainingWorker;
 let trainingState = { state: 'idle' };
+const trainingEvents = new EventEmitter();
 
 function createTrainingWorker() {
   const worker = new Worker(
-    new URL('./workers/modelTrainingWorker.js', import.meta.url),
+    new URL('../workers/modelTrainingWorker.js', import.meta.url),
     {
       type: 'module',
       execArgv: process.execArgv.filter((argument) => !argument.startsWith('--input-type')),
@@ -15,6 +17,7 @@ function createTrainingWorker() {
   worker.on('message', (message) => {
     if (message.type === 'progress') {
       trainingState = { state: 'running', ...message };
+      trainingEvents.emit('progress', message);
     }
 
     if (message.type === 'complete') {
@@ -27,6 +30,7 @@ function createTrainingWorker() {
   });
 
   worker.on('error', (error) => {
+    console.error('Erro ao iniciar/executar o worker:', error);
     trainingState = { state: 'error', error: error.message };
   });
 
@@ -42,10 +46,18 @@ export function startTraining(data = {}) {
 
   trainingState = { state: 'running', progress: 0 };
   trainingWorker = createTrainingWorker();
-  trainingWorker.postMessage({ action: 'trainingModel', ...data });
+  trainingWorker.postMessage({
+    action: 'trainingModel', ...data
+  });
+
   return trainingState;
 }
 
 export function getTrainingStatus() {
   return trainingState;
+}
+
+export function onTrainingProgress(listener) {
+  trainingEvents.on('progress', listener);
+  return () => trainingEvents.off('progress', listener);
 }

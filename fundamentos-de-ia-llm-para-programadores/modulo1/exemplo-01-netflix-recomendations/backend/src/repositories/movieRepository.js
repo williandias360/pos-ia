@@ -42,16 +42,13 @@ function addFilters(filters, params, where = [], alias = '') {
 export async function listMovies(filters) {
   const params = [];
   const where = addFilters(filters, params);
-  const limit = filters.limit;
-  const offset = filters.offset;
 
-  params.push(limit, offset);
   const result = await query(
     `SELECT ${movieColumns()}
     FROM movies
      ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
      ORDER BY release_year DESC NULLS LAST, title ASC
-     LIMIT $${params.length - 1} OFFSET $${params.length}`,
+     `,
     params,
   );
 
