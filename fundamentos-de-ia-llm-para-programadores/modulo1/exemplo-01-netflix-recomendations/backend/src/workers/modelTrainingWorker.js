@@ -1,8 +1,13 @@
 import { parentPort } from 'node:worker_threads';
 import * as tf from '@tensorflow/tfjs';
+import pg from 'pg';
+import { config } from '../config.js';
+
+const { Pool } = pg;
 let _globalCtx = {};
 let _model = null;
 const TRAINING_EPOCHS = 100;
+const EMBEDDING_SIZE = 32;
 
 const WEIGHTS = {
   IMDB_RATING: 0.8,
@@ -98,10 +103,14 @@ function makeContext(movies, users) {
   };
 }
 
-const oneHotWeighted = (index, length, weight) =>
-  index === undefined
+const oneHotWeighted = (index, length, weight) => {
+  if (length === 0) return tf.zeros([0]);
+  if (length === 1) return tf.tensor1d([index === undefined ? 0 : weight]);
+
+  return index === undefined
     ? tf.zeros([length])
     : tf.oneHot(index, length).cast('float32').mul(weight);
+};
 
 const multiHotWeighted = (values, indexMap, length, weight) => {
   const vector = new Array(length).fill(0);
@@ -241,7 +250,8 @@ async function configureNeuralNetAndTrain(trainData) {
 
   model.add(
     tf.layers.dense({
-      units: 32,
+      name: 'embedding',
+      units: EMBEDDING_SIZE,
       activation: 'relu'
     }));
 
@@ -274,6 +284,83 @@ async function configureNeuralNetAndTrain(trainData) {
       }
     }
   });
+
+  trainData.xs.dispose();
+  trainData.ys.dispose();
+
+  return model;
+}
+
+function createMovieEmbeddingInputs(context) {
+  const emptyUserVector = new Array(context.dimensions).fill(0);
+  const movieVectors = context.movies.map(movie => {
+    const movieTensor = encodeMovie(movie, context);
+    const movieVector = Array.from(movieTensor.dataSync());
+    movieTensor.dispose();
+
+    return [...emptyUserVector, ...movieVector];
+  });
+
+  return tf.tensor2d(
+    movieVectors,
+    [context.movies.length, context.dimensions * 2]
+  );
+}
+
+async function createMovieEmbeddings(model, context) {
+  const embeddingModel = tf.model({
+    inputs: model.inputs,
+    outputs: model.getLayer('embedding').output,
+  });
+  const movieInputs = createMovieEmbeddingInputs(context);
+  const embeddingTensor = embeddingModel.predict(movieInputs);
+  const embeddingSize = embeddingTensor.shape[1];
+
+  if (embeddingSize !== EMBEDDING_SIZE) {
+    movieInputs.dispose();
+    embeddingTensor.dispose();
+    throw new Error(`Embedding com tamanho invalido: ${embeddingSize}`);
+  }
+
+  const embeddings = await embeddingTensor.array();
+  movieInputs.dispose();
+  embeddingTensor.dispose();
+
+  return embeddings;
+}
+
+async function saveEmbeddings(movies, embeddings) {
+  const pool = new Pool({ connectionString: config.databaseUrl });
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    for (let index = 0; index < movies.length; index += 1) {
+      const vector = `[${embeddings[index]
+        .map(value => Number(value).toFixed(8))
+        .join(',')}]`;
+
+      const result = await client.query(
+        `UPDATE movies
+         SET embedding = $1::vector
+         WHERE id = $2`,
+        [vector, movies[index].id],
+      );
+
+      if (result.rowCount !== 1) {
+        throw new Error(`Filme nao encontrado para embedding: ${movies[index].id}`);
+      }
+    }
+
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+    await pool.end();
+  }
 }
 
 async function trainModel({ users = [], movies = [] } = {}) {
@@ -281,20 +368,27 @@ async function trainModel({ users = [], movies = [] } = {}) {
 
     users = users.slice(0, 500);
     movies = movies.slice(0, 1000);
+    if (!movies.length) {
+      throw new Error('Nao existem filmes para gerar embeddings.');
+    }
+
     const context = makeContext(movies, users);
-    context.moviesVectors = movies.map((movie) => {
-      return {
-        title: movie.title,
-        meta: { ...movie },
-        vector: encodeMovie(movie, context).dataSync()
-      }
-    });
 
     _globalCtx = context;
 
     const trainData = createTrainingData(context);
     console.log('vai treinar o modelo');
     _model = await configureNeuralNetAndTrain(trainData);
+    const embeddings = await createMovieEmbeddings(_model, context);
+
+    context.moviesVectors = movies.map((movie, index) => ({
+      title: movie.title,
+      meta: { ...movie },
+      vector: embeddings[index],
+    }));
+
+    await saveEmbeddings(movies, embeddings);
+    _model.dispose();
 
     return context;
   } catch (err) {
