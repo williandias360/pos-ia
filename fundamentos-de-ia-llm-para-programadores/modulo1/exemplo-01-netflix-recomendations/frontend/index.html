@@ -5,6 +5,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link href="./src/css/output.css" rel="stylesheet">
+  <script src="http://localhost:3333/socket.io/socket.io.js"></script>
   <title>Recomendação de filmes</title>
 </head>
 
@@ -14,7 +15,7 @@
       Netflix Recommendations
     </h1>
 
-    <div class="flex flex-wrap items-start gap-2">
+    <div class="flex flex-wrap flex-col items-start gap-2">
       <div class="flex gap-2">
         <button id="btn-movies"
           class="p-2 rounded text-white font-medium outline outline-1 outline-indigo-600 bg-indigo-500 hover:bg-indigo-600">
@@ -33,15 +34,18 @@
           Training Model
         </button>
       </div>
-      <div class="flex h-auto w-full min-w-0 max-w-full flex-col overflow-hidden rounded-sm border-2 md:w-full">
-        <span class="shrink-0 bg-gray-200 p-2 text-gray-800 font-semibold leading-4 shadow-sm">Response
-        </span>
-        <pre id="response"
-          class="min-h-0 min-w-0 flex-1 overflow-auto whitespace-pre-wrap break-words p-2 hover:bg-slate-50"></pre>
+      <div class="flex flex-col gap-2 w-full">
+        <progress class="w-full" id="progress" value="0" max="100"></progress>
+        <div class="flex h-auto w-full min-w-0 max-w-full flex-col overflow-hidden rounded-sm border-2 md:w-full">
+          <span class="shrink-0 bg-gray-200 p-2 text-gray-800 font-semibold leading-4 shadow-sm">Response
+          </span>
+          <pre id="response"
+            class="min-h-0 min-w-0 flex-1 overflow-auto whitespace-pre-wrap break-words p-2 hover:bg-slate-50 font-mono"></pre>
+        </div>
       </div>
     </div>
   </div>
 </body>
-<script src="./src/js/index.js"></script>
+<script src="./src/js/index.js" defer></script>
 
 </html>
