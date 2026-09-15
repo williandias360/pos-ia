@@ -26,7 +26,7 @@ async function loadModelAndLabels() {
  * 
  * Pré processa a imagem para o formado aceito pelo YOLO;
  * - tf.browser.fromPixels(): converte ImageBitmap/ImageData para tensor [H, W, 3]
- * - tf.imag.resizeBilinear(): redimensiona para [INPUT_DIM, INPUT_DIM]
+ * - tf.image.resizeBilinear(): redimensiona para [INPUT_DIM, INPUT_DIM]
  * - .div(255): normaliza os valores para [0, 1]
  * - .expandDims(0): adiciona dimensão batch [1, H, W, 3]
  * 
@@ -81,7 +81,7 @@ function* processPrediction({ boxes, scores, classes }, width, height) {
         if (scores[index] < CLASS_THRESHOLD) continue;
 
         const label = _labels[classes[index]];
-        if (label != 'kite') continue;
+        if (label !== 'kite') continue;
 
         let [x1, y1, x2, y2] = boxes.slice(index * 4, (index + 1) * 4);
 
@@ -120,8 +120,6 @@ self.onmessage = async ({ data }) => {
             ...prediction
         });
     }
-
-
 };
 
 console.log('🧠 YOLOv5n Web Worker initialized');
