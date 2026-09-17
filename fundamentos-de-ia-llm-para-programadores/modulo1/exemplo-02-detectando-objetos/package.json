@@ -1,0 +1,17 @@
+{
+  "name": "exemplo-02-detectando-objetos",
+  "version": "1.0.0",
+  "description": "",
+  "type": "commonjs",
+  "main": "index.js",
+  "scripts": {
+    "start": "browser-sync start --server --files \"./**/*\"",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "@tensorflow/tfjs": "^4.22.0"
+  },
+  "devDependencies": {
+    "browser-sync": "^3.0.4"
+  }
+}
