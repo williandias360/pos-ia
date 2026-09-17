@@ -12,9 +12,20 @@ html, body {
   gap: 4px;
 }
 
+.space-around {
+  justify-content: space-around;
+}
+
 #image_preview {
-  max-width: 300px;
-  max-height: 300px;
+  max-width: 100%;
+  max-height: auto;
   margin-top: 15px;
-  display: none;
+  display: block;
+}
+
+#image_output {
+  position: absolute;
+  top:0;
+  left: 0;
+  pointer-events: none;
 }

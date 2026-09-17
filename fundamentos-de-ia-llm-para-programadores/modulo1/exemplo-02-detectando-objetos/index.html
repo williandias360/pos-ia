@@ -13,7 +13,10 @@
   <div class="container">
     <div class="container container-column">
       <label for="input_imagem">Selecione uma imagem</label>
-      <img id="imagem_preview" src="" />
+      <div style="position: relative; display: inline-block;">
+        <img id="imagem_preview" style="display: block; max-width: 100%; height: auto;" src="" />
+        <canvas id="image_output"></canvas>
+      </div>
       <input type="file" name="input_imagem" id="input_imagem" accept="image/*" />
     </div>
   </div>
