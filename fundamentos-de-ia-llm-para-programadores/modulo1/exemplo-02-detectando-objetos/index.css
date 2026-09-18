@@ -20,7 +20,7 @@ html, body {
   width: 600px;
   height: 600px;
   object-fit: contain;
-  display: block;
+  display: none;
 }
 
 #image_output {
