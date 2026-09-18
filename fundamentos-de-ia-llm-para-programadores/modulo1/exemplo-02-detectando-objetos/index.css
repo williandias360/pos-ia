@@ -16,16 +16,19 @@ html, body {
   justify-content: space-around;
 }
 
-#image_preview {
-  max-width: 100%;
-  max-height: auto;
-  margin-top: 15px;
+#imagem_preview {
+  width: 600px;
+  height: 600px;
+  object-fit: contain;
   display: block;
 }
 
 #image_output {
   position: absolute;
-  top:0;
+  top: 0;
   left: 0;
+  width: 600px;
+  height: 600px;
   pointer-events: none;
+  z-index: 1;
 }

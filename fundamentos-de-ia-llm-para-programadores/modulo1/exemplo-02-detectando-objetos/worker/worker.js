@@ -9,21 +9,69 @@ tflite.setWasmPath(
 );
 
 const INPUT_MODEL_DIMENTIONS = 640;
-const SCORE_THRESHOLD = 0.5;
-const IOUTHRESHOLD = 0.35;
+const SCORE_THRESHOLD = 0.4;
+const IOUTHRESHOLD = 0.40;
+const LABELS_PATH = '../machine_learning/labels.json';
 let _model = null;
+let _labels = null;
 
+/**
+ * CORREÇÃO #1 - Pré-processamento (por que existe o "letterbox" abaixo?)
+ * -----------------------------------------------------------------------
+ * Versão ORIGINAL (com bug):
+ *   const image = tf.browser.fromPixels(input);
+ *   tf.image.resizeBilinear(image, [640, 640])
+ *
+ * Isso fazia um "stretch" (esticar) direto da imagem para 640x640, sem se
+ * importar com a proporção original. Se a foto não é quadrada (ex: 768x576),
+ * a imagem fica achatada/esticada de forma diferente no eixo X e no eixo Y.
+ *
+ * O YOLO foi treinado com imagens em "letterbox": redimensiona mantendo a
+ * proporção original e preenche ("pad") o espaço que sobra com uma cor cinza
+ * neutra (114), até formar o quadrado 640x640. Ao alimentar o modelo com uma
+ * imagem esticada (fora do padrão que ele aprendeu), a posição do objeto
+ * detectado sai um pouco deslocada em relação à posição real - foi o que
+ * causei o "deslocamento horizontal" reportado, já que o desvio depende de
+ * quanto cada eixo foi esticado.
+ *
+ * Por isso agora calculamos `scale`, `padLeft` e `padTop` e devolvemos esses
+ * valores junto do tensor: eles serão necessários depois, na hora de reverter
+ * o processo e converter as coordenadas da caixa de volta para a imagem
+ * original (ver CORREÇÃO #4 mais abaixo, no passo 7 do processYOLOOutput).
+ */
 function preprocessImage(input) {
-  return tf.tidy(() => {
-    const image = tf.browser.fromPixels(input);
+  const origWidth = input.width;
+  const origHeight = input.height;
 
-    return tf.image
-      .resizeBilinear(image, [INPUT_MODEL_DIMENTIONS, INPUT_MODEL_DIMENTIONS])
+  const scale = Math.min(
+    INPUT_MODEL_DIMENTIONS / origWidth,
+    INPUT_MODEL_DIMENTIONS / origHeight
+  );
+  const resizedWidth = Math.round(origWidth * scale);
+  const resizedHeight = Math.round(origHeight * scale);
+  const padLeft = Math.floor((INPUT_MODEL_DIMENTIONS - resizedWidth) / 2);
+  const padTop = Math.floor((INPUT_MODEL_DIMENTIONS - resizedHeight) / 2);
+  const padRight = INPUT_MODEL_DIMENTIONS - resizedWidth - padLeft;
+  const padBottom = INPUT_MODEL_DIMENTIONS - resizedHeight - padTop;
+
+  const tensor = tf.tidy(() => {
+    const image = tf.browser.fromPixels(input);
+    const resized = tf.image.resizeBilinear(image, [resizedHeight, resizedWidth]);
+
+    // Preenche o restante do quadrado 640x640 com cinza (114), padrão do letterbox do YOLO
+    const padded = resized.pad(
+      [[padTop, padBottom], [padLeft, padRight], [0, 0]],
+      114
+    );
+
+    return padded
       .expandDims(0)
       .toFloat()
       .div(255)
       .transpose([0, 3, 1, 2]);
-  })
+  });
+
+  return { tensor, scale, padLeft, padTop };
 }
 
 async function loadModel() {
@@ -38,6 +86,8 @@ async function loadModel() {
     _model = await tflite.loadTFLiteModel(modelUrl.href, {
       numThreads: 1
     });
+
+    _labels = await (await fetch(LABELS_PATH)).json();
 
     console.log('✅ Modelo TFLite carregado');
 
@@ -54,229 +104,150 @@ async function loadModel() {
   }
 }
 
+/**
+ * CORREÇÃO #2 - runInference (o bug mais grave: escala errada no output)
+ * -----------------------------------------------------------------------
+ * Versão ORIGINAL (com bug):
+ *   const output = await _model.predict(tensor);
+ *   return tf.mul(tf.add(output, 1), 127.5);
+ *
+ * A fórmula `(x + 1) * 127.5` é usada para DESNORMALIZAR IMAGENS: converte
+ * valores no intervalo [-1, 1] de volta para pixels [0, 255]. Isso é comum em
+ * pós-processamento de GANs/autoencoders, mas aqui estava sendo aplicada por
+ * engano em cima da SAÍDA do modelo de detecção (as 4 coordenadas da caixa +
+ * 80 scores de classe), que não têm nada a ver com pixels de imagem.
+ *
+ * Como descobrimos: ao testar com uma imagem real, o placar de confiança
+ * aparecia como "24629%" (deveria ser no máximo 100%). Calculando ao
+ * contrário: 0.9317 (score real, já entre 0 e 1) → (0.9317 + 1) * 127.5 ≈
+ * 246,3 → exibido como 24629% depois do `.toFixed(0)` * 100. Ou seja, a
+ * fórmula estava distorcendo tanto os scores quanto as coordenadas da caixa,
+ * o que explicava tanto o placar absurdo quanto a caixa desenhada longe do
+ * cachorro. A correção é simplesmente NÃO transformar a saída do modelo -
+ * ela já vem pronta para uso (ver CORREÇÃO #3 a seguir).
+ */
 async function runInference(tensor) {
-  const output = await _model.predict(tensor);
-
-  return tf.mul(tf.add(output, 1), 127.5);
+  return _model.predict(tensor);
 }
 
-async function processYOLOOutput(outputTensor, origWidth, origHeight, scoreThreshold, iouThreshold) {
-  // return tf.tidy(() => {
-  //   //1. Transpõe de [1, 84, 8400] para [8400, 84]
-  //   const squeezed = outputTensor.squeeze([0]); //[84, 8400]
-  //   const transposed = squeezed.transpose([1, 0]); //[8400, 84]
-
-  //   //2. Separa Boundig Boxes [8400, 4] e Pontuações das classe [8400, 80]
-  //   const boxes = transposed.slice([0, 0], [-1, 4]);
-  //   const scores = transposed.slice([0, 4], [-1, 80]);
-
-  //   //3. Obtém a maior pontuação e a classe correspondente para cada uma das 8400 caixas
-  //   const maxScores = scores.max(1); //[8400]
-  //   const classes = scores.argMax(1); //[8400]
-
-  //   //4. Converte [center_x, center_y, width, height] -> [ymin, xmin, ymax, xmax] normalizados (0 a 1)
-  //   const cx = boxes.slice([0, 0], [-1, 1]);
-  //   const cy = boxes.slice([0, 1], [-1, 1]);
-  //   const w = boxes.slice([0, 2], [-1, 1]);
-  //   const h = boxes.slice([0, 3], [-1, 1]);
-
-  //   const ymin = cy.sub(h.div(2)).div(INPUT_MODEL_DIMENTIONS);
-  //   const xmin = cx.sub(w.div(2)).div(INPUT_MODEL_DIMENTIONS);
-  //   const ymax = cy.add(h.div(2)).div(INPUT_MODEL_DIMENTIONS);
-  //   const xmax = cy.add(w.div(2)).div(INPUT_MODEL_DIMENTIONS);
-
-  //   const formattedBoxes = tf.concat([
-  //     ymin,
-  //     xmin,
-  //     ymax,
-  //     xmax
-  //   ], 1); //[8400, 4]
-
-  //   //5. Aplica Non-Maximum Suppresions (NMS)
-  //   const nmsIndices = tf.image.nonMaxSuppression(
-  //     formattedBoxes,
-  //     maxScores,
-  //     30, //Máximo de detecções retornadas
-  //     iouThreshold, // Limiar de sobreposição (IoU)
-  //     scoreThreshold, // Confiança mínima para considerar a caixa
-  //   );
-
-  //   //6. Extrai apenas os valores filtrados pelo NMS
-  //   const selectedBoxes = formattedBoxes.gather(nmsIndices).arraySync();
-  //   const selectedScores = maxScores.gather(nmsIndices).arraySync();
-  //   const selectedClasses = classes.gather(nmsIndices).arraySync();
-
-  //   //7. Mapeia para as coordenadas originais da imagem/canvas
-
-  //   return selectedBoxes.map((box, index) => {
-  //     const [ymin, xmin, ymax, xmax] = box;
-  //     return {
-  //       bbox: [
-  //         xmin * width, // X
-  //         ymax * height,// Y
-  //         (xmax - xmin) * width, //Largura
-  //         (ymax - ymax) * height, //Altura
-  //       ],
-  //       score: selectedScores[index],
-  //       classId: selectedClasses[index],
-  //     };
-  //   });
-  // });
-
-  // 1. Extrai o array de dados puro e o formato [1, 84, 8400]
-  const rawData = await outputTensor.data(); // Float32Array com 84 x 8400 valores
-  const numAnchors = 8400;
-  const numChannels = 84; // 4 (boxes) + 80 (classes)
-
-  const boxes = [];
-  const scores = [];
-  const classIds = [];
-
-  // 2. Loop direto pelos dados (evita erros de transposição do TFJS)
-  for (let i = 0; i < numAnchors; i++) {
-    // Busca a maior pontuação de classe para esta âncora
-    let maxScore = 0;
-    let maxClassId = -1;
-
-    for (let c = 0; c < 80; c++) {
-      // No formato [1, 84, 8400], o valor da classe 'c' na âncora 'i' fica no índice: (4 + c) * 8400 + i
-      const score = rawData[(4 + c) * numAnchors + i];
-      if (score > maxScore) {
-        maxScore = score;
-        maxClassId = c;
-      }
-    }
-
-    // Filtra apenas o que passa pelo score mínimo inicial
-    if (maxScore >= scoreThreshold) {
-      // Coordenadas da caixa (em escala 0 a 640)
-      const cx = rawData[0 * numAnchors + i];
-      const cy = rawData[1 * numAnchors + i];
-      const w = rawData[2 * numAnchors + i];
-      const h = rawData[3 * numAnchors + i];
-
-      // Converte para [ymin, xmin, ymax, xmax] normalizados (0.0 a 1.0) para o NMS do TFJS
-      const xmin = Math.max(0, (cx - w / 2) / 640);
-      const ymin = Math.max(0, (cy - h / 2) / 640);
-      const xmax = Math.min(1, (cx + w / 2) / 640);
-      const ymax = Math.min(1, (cy + h / 2) / 640);
-
-      boxes.push([ymin, xmin, ymax, xmax]);
-      scores.push(maxScore);
-      classIds.push(maxClassId);
-    }
-  }
-
-  // Se nada ultrapassou o limiar de confiança, retorna array vazio
-  if (boxes.length === 0) return [];
-
-  // 3. Aplica o Non-Maximum Suppression (NMS) apenas nas caixas válidas
+async function processYOLOOutput(outputTensor, scale, padLeft, padTop, scoreThreshold, iouThreshold) {
   return tf.tidy(() => {
-    const boxesTensor = tf.tensor2d(boxes);
-    const scoresTensor = tf.tensor1d(scores);
+    //1. Transpõe de [1, 84, 8400] para [8400, 84]
+    const squeezed = outputTensor.squeeze([0]); //[84, 8400]
+    const transposed = squeezed.transpose([1, 0]); //[8400, 84]
 
+    //2. Separa Boundig Boxes [8400, 4] e Pontuações das classe [8400, 80]
+    const boxes = transposed.slice([0, 0], [-1, 4]);
+    const scores = transposed.slice([0, 4], [-1, 80]);
+
+    //3. Obtém a maior pontuação e a classe correspondente para cada uma das 8400 caixas
+    const maxScores = scores.max(1); //[8400]
+    const classes = scores.argMax(1); //[8400]
+
+    /**
+     * CORREÇÃO #3 - Normalização em dobro (boxes "encolhendo" para perto de zero)
+     * ---------------------------------------------------------------------------
+     * Versão ORIGINAL (com bug), depois de corrigir o runInference acima:
+     *   const ymin = cy.sub(h.div(2)).div(INPUT_MODEL_DIMENTIONS);
+     *   (idem para xmin, ymax, xmax)
+     *
+     * O modelo (YOLOv8 exportado para TFLite) já devolve cx, cy, w, h
+     * NORMALIZADOS entre 0 e 1 (fração do quadrado 640x640), e não em pixels
+     * (0 a 640) como o código original assumia. Ao dividir de novo por
+     * INPUT_MODEL_DIMENTIONS (640), um valor já pequeno (ex.: 0.17) virava
+     * 0.17/640 ≈ 0.00027 - ou seja, praticamente zero.
+     *
+     * Como descobrimos: instrumentamos o worker e logamos o bbox final. As
+     * caixas vinham com X e Y minúsculos (ex.: 0.20) misturados com um valor
+     * de Y gigante e negativo (-95.5) depois do desfazer-letterbox - um sinal
+     * claro de que xmin/ymin estavam sendo "esmagados" antes de chegar lá.
+     * A correção é não dividir por INPUT_MODEL_DIMENTIONS aqui: mantemos
+     * ymin/xmin/ymax/xmax já normalizados (0 a 1), que é o formato que o
+     * `tf.image.nonMaxSuppression` espera e também o formato que a CORREÇÃO #4
+     * (abaixo) espera receber para desfazer o letterbox corretamente.
+     */
+    const cx = boxes.slice([0, 0], [-1, 1]);
+    const cy = boxes.slice([0, 1], [-1, 1]);
+    const w = boxes.slice([0, 2], [-1, 1]);
+    const h = boxes.slice([0, 3], [-1, 1]);
+
+    const ymin = cy.sub(h.div(2));
+    const xmin = cx.sub(w.div(2));
+    const ymax = cy.add(h.div(2));
+    const xmax = cx.add(w.div(2));
+
+    const formattedBoxes = tf.concat([
+      ymin,
+      xmin,
+      ymax,
+      xmax
+    ], 1); //[8400, 4]
+
+    //5. Aplica Non-Maximum Suppresions (NMS)
     const nmsIndices = tf.image.nonMaxSuppression(
-      boxesTensor,
-      scoresTensor,
-      15,             // Máximo de detecções na imagem
-      iouThreshold,   // Interseção sobre União (IoU)
-      scoreThreshold
-    );
+      formattedBoxes,
+      maxScores,
+      100, //Máximo de detecções retornadas
+      iouThreshold, // Limiar de sobreposição (IoU)
+      scoreThreshold, // Confiança mínima para considerar a caixa
+    ).arraySync();
 
-    const indices = nmsIndices.arraySync();
+    //6. Extrai apenas os valores filtrados pelo NMS
+    const selectedBoxes = formattedBoxes.gather(nmsIndices).arraySync();
+    const selectedScores = maxScores.gather(nmsIndices).arraySync();
+    const selectedClasses = classes.gather(nmsIndices).arraySync();
 
-    // 4. Converte as caixas filtradas para os pixels reais da tela (origWidth / origHeight)
-    return indices.map((idx) => {
-      const [ymin, xmin, ymax, xmax] = boxes[idx];
-      return {
+    //7. Mapeia para as coordenadas originais da imagem/canvas
+    const mapBoxes = [];
+    for (let index = 0; index < selectedBoxes.length; index++) {
+      if (selectedScores[index] < SCORE_THRESHOLD) continue;
+      const label = _labels[selectedClasses[index]];
+
+      if (!['dog', 'person', 'cat', 'car'].includes(label)) continue;
+
+      const [ymin, xmin, ymax, xmax] = selectedBoxes[index];
+
+      /**
+       * CORREÇÃO #4 - Mapear a caixa de volta para a imagem original
+       * ---------------------------------------------------------------
+       * Versão ORIGINAL (com bug):
+       *   xmin * origWidth, ymin * origHeight, ...
+       *
+       * Essa conta só funciona se a imagem tivesse sido esticada (stretch)
+       * direto para 640x640 sem preservar proporção. Como agora fazemos
+       * letterbox no pré-processamento (CORREÇÃO #1: resize proporcional +
+       * padding cinza), o caminho de volta precisa desfazer os MESMOS passos,
+       * na ordem inversa:
+       *   1. normalizado (0-1)      -> pixels dentro do quadrado 640x640 (* 640)
+       *   2. pixels no quadrado 640 -> pixels na imagem redimensionada (- padding)
+       *   3. imagem redimensionada  -> imagem original (/ scale)
+       *
+       * `scale`, `padLeft` e `padTop` são os mesmos valores calculados e
+       * retornados lá no preprocessImage, repassados pelo onmessage abaixo.
+       */
+      const xMin = (xmin * INPUT_MODEL_DIMENTIONS - padLeft) / scale;
+      const yMin = (ymin * INPUT_MODEL_DIMENTIONS - padTop) / scale;
+      const xMax = (xmax * INPUT_MODEL_DIMENTIONS - padLeft) / scale;
+      const yMax = (ymax * INPUT_MODEL_DIMENTIONS - padTop) / scale;
+
+      mapBoxes.push({
         bbox: [
-          xmin * origWidth,                  // X
-          ymin * origHeight,                 // Y
-          (xmax - xmin) * origWidth,         // Largura
-          (ymax - ymin) * origHeight         // Altura
+          xMin, // X
+          yMin, // Y
+          xMax - xMin, //Largura
+          yMax - yMin, //Altura
         ],
-        score: scores[idx],
-        classId: classIds[idx]
-      };
-    });
+        score: selectedScores[index],
+        classId: selectedClasses[index],
+        label: label,
+      });
+    }
+
+    return mapBoxes;
   });
 }
 
-// async function processYOLOOutput(outputTensor, origWidth, origHeight, scoreThreshold = 0.50, iouThreshold = 0.35) {
-//   const rawData = await outputTensor.data(); // Float32Array [84 x 8400]
-//   const numAnchors = 8400;
 
-//   const boxes = [];
-//   const scores = [];
-//   const classIds = [];
-
-//   // 1. Decodificação das 8400 âncoras
-//   for (let i = 0; i < numAnchors; i++) {
-//     let maxScore = 0;
-//     let maxClassId = -1;
-
-//     // Busca a classe com maior pontuação
-//     for (let c = 0; c < 80; c++) {
-//       const score = rawData[(4 + c) * numAnchors + i];
-//       if (score > maxScore) {
-//         maxScore = score;
-//         maxClassId = c;
-//       }
-//     }
-
-//     // Só passa para o NMS se tiver confiança mínima de 50%
-//     if (maxScore >= scoreThreshold) {
-//       const cx = rawData[0 * numAnchors + i];
-//       const cy = rawData[1 * numAnchors + i];
-//       const w = rawData[2 * numAnchors + i];
-//       const h = rawData[3 * numAnchors + i];
-
-//       // Converte para [ymin, xmin, ymax, xmax] normalizados (0.0 a 1.0)
-//       const xmin = Math.max(0, (cx - w / 2) / 640);
-//       const ymin = Math.max(0, (cy - h / 2) / 640);
-//       const xmax = Math.min(1, (cx + w / 2) / 640);
-//       const ymax = Math.min(1, (cy + h / 2) / 640);
-
-//       boxes.push([ymin, xmin, ymax, xmax]);
-//       scores.push(maxScore);
-//       classIds.push(maxClassId);
-//     }
-//   }
-
-//   if (boxes.length === 0) return [];
-
-//   // 2. Aplicação Rigorosa do Non-Maximum Suppression (NMS)
-//   return tf.tidy(() => {
-//     const boxesTensor = tf.tensor2d(boxes);   // Formato [N, 4] -> [ymin, xmin, ymax, xmax]
-//     const scoresTensor = tf.tensor1d(scores); // Formato [N]
-
-//     // O NMS do TFJS filtra caixas sobrepostas do mesmo objeto
-//     const nmsIndices = tf.image.nonMaxSuppression(
-//       boxesTensor,
-//       scoresTensor,
-//       5,              // Limita a no máximo 5 detecções principais na imagem
-//       iouThreshold,   // 0.35 -> Descarta caixas com mais de 35% de sobreposição
-//       scoreThreshold  // 0.50 -> Ignora palpites com menos de 50% de certeza
-//     );
-
-//     const selectedIndices = nmsIndices.arraySync();
-
-//     // 3. Mapeia apenas os índices selecionados pelo NMS para as dimensões da tela
-//     return selectedIndices.map((idx) => {
-//       const [ymin, xmin, ymax, xmax] = boxes[idx];
-//       return {
-//         bbox: [
-//           xmin * origWidth,                  // X (canto esquerdo)
-//           ymin * origHeight,                 // Y (canto superior)
-//           (xmax - xmin) * origWidth,         // Largura da caixa
-//           (ymax - ymin) * origHeight         // Altura da caixa
-//         ],
-//         score: scores[idx],
-//         classId: classIds[idx]
-//       };
-//     });
-//   });
-// }
 
 loadModel();
 
@@ -295,22 +266,27 @@ self.onmessage = async ({ data }) => {
   const imageBitmap = await createImageBitmap(blob);
 
   //1. Pré-processamento
-  const input = preprocessImage(imageBitmap);
+  // preprocessImage agora devolve, além do tensor, o `scale`/`padLeft`/`padTop`
+  // do letterbox (CORREÇÃO #1). Precisamos repassar esses 3 valores para
+  // processYOLOOutput, pois são eles que permitem desfazer o letterbox no
+  // passo 7 (CORREÇÃO #4) e devolver a caixa nas coordenadas certas.
+  const { tensor, scale, padLeft, padTop } = preprocessImage(imageBitmap);
   const { width, height } = imageBitmap;
 
   //2. Inferência
-  const inferenceResults = await runInference(input);
+  const inferenceResults = await runInference(tensor);
 
   //3. Pós processamento e NMS
   const detections = await processYOLOOutput(
     inferenceResults,
-    width,
-    height,
+    scale,
+    padLeft,
+    padTop,
     SCORE_THRESHOLD,
     IOUTHRESHOLD
   );
 
-  input.dispose();
+  tensor.dispose();
   inferenceResults.dispose();
 
   postMessage({
