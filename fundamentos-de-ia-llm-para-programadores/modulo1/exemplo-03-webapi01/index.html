@@ -1,0 +1,11 @@
+<output id="output"></output>
+<script src="https://cdn.jsdelivr.net/npm/marked/lib/marked.umd.js"></script>
+
+<script>
+  const output = document.getElementById('output');
+
+  ; (async () => {
+    const params = await LanguageModel.params();
+    console.log('params', params);
+  })();
+</script>
