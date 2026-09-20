@@ -1,0 +1,10 @@
+{
+  "name": "exemplo-playwrite",
+  "private": true,
+  "scripts": {
+    "test": "playwright test --project=chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0"
+  }
+}
