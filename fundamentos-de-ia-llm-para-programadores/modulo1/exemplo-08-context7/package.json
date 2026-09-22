@@ -1,0 +1,10 @@
+{
+  "dependencies": {
+    "better-auth": "^1.7.5",
+    "better-sqlite3": "^13.0.3"
+  },
+  "devDependencies": {
+    "@better-auth/cli": "^1.4.22",
+    "@types/better-sqlite3": "^9.6.0"
+  }
+}
