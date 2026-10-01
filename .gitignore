@@ -1,4 +1,12 @@
 node_modules
 .env
+<<<<<<< HEAD
 .vscode
 .github
+=======
+data
+.vscode
+.github
+/logs
+/plugins
+>>>>>>> d6790c8 (Ajustes gitignore)
