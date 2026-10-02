@@ -1,8 +1,0 @@
-{
-  "servers": {
-    "erickwendel-contributions": {
-      "command": "npx",
-      "args": ["-y", "@erickwendel/contributions-mcp"]
-    }
-  }
-}
