@@ -11,7 +11,7 @@ export class OpenRouterService {
   private client: OpenRouter;
   private config: ModelConfig;
 
-  constructor(configOverride: ModelConfig) {
+  constructor(configOverride?: ModelConfig) {
     this.config = configOverride ?? config;
     this.client = new OpenRouter({
       apiKey: config.apiKey,

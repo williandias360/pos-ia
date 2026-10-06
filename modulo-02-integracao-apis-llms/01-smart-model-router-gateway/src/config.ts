@@ -27,15 +27,11 @@ export const config: ModelConfig = {
   xTitle: 'SmartModelRouterGateway',
   port: 3000,
   models: [
-    //top 1 para a listagem ordenada por preço
-    // 'thinkingmachines/inkling-small:free',
-    //'stealth/space-bunny-alpha',
-    //top 5 para a listagem de thoughput
-    // 'nex-agi/nex-n2.5-mini',
-    'nvidia/nemotron-3-super-120b-a12b:free',
-    'liquid/lfm-2.5-2.6b:free',
-    // 'apodex/apodex-1.1-mini:free'
-    'google/gemini-2.5-flash-lite',
+    //mais barato
+    'stealth/space-bunny-alpha',
+
+    //melhor throughput
+    'inclusionai/ling-3.0-flash-sante:free',
   ],
   temperature: 0.2,
   maxTokens: 400,

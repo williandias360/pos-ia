@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "target": "es2025",
+    "module": "esnext",
+    "lib":[
+      "ES2025"
+    ],
+    "moduleResolution":"bundler",
+    "allowImportingTsExtensions":true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "allowSyntheticDefaultImports":true,
+    "types":[
+      "node"
+    ]
+  },
+  "exclude":[
+    "node_modules",
+    "dist"
+  ]
+}
