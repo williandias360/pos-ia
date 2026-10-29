@@ -1,0 +1,22 @@
+Product Aggregation Report
+==========================
+
+Source: products.csv
+Total products processed: 8
+
+Aggregation by Category:
+
+1. Category: food
+   - Total Price: $50.86
+   - Product Count: 5
+   - Products: rice, beans, beans, beans, beans
+
+2. Category: personal health
+   - Total Price: $20.47
+   - Product Count: 3
+   - Products: shampoo, soap, toothpaste
+
+Summary:
+- Food total: $50.86 (5 items)
+- Personal health total: $20.47 (3 items)
+- Grand total: $71.33 (8 items)
