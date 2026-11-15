@@ -14,5 +14,5 @@ SERVICE_TOKEN=$(curl --silent -X POST http://localhost:9999/v1/auth/service-toke
 
 echo "Member Service Token: $SERVICE_TOKEN"
 
-curl http://localhost:9999/v1/customers \
-  -H "Authorization: Bearer $SERVICE_TOKEN"
+# curl http://localhost:9999/v1/customers \
+#   -H "Authorization: Bearer $SERVICE_TOKEN"

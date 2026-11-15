@@ -1,0 +1,15 @@
+{
+	"mcpServers": {
+		"customers-mcp": {
+			"type": "stdio",
+			"command": "node",
+			"args": [
+				"--experimental-strip-types",
+				"./src/index.ts"
+			],
+			"env": {
+				"SERVICE_TOKEN": ""
+			}
+		}
+	}
+}
