@@ -1,0 +1,27 @@
+{
+	"mcpServers": {
+		"ciphersuite-mcp": {
+			"type": "stdio",
+			"command": "node",
+			"args": []
+		},
+		"my-mcp-server-f0a523ca": {
+			"type": "stdio",
+			"command": "ciphersuite-mcp",
+			"args": []
+		},
+		"my-mcp-server-985bd774": {
+			"type": "stdio",
+			"command": "node",
+			"args": []
+		},
+		"my-mcp-server-82dda8d5": {
+			"type": "stdio",
+			"command": "node",
+			"args": [
+				"--experimental-strip-types",
+				"src/index.ts"
+			]
+		}
+	}
+}
