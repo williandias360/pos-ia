@@ -1,0 +1,11 @@
+{
+	"mcpServers": {
+		"customers-mcp": {
+			"command": "npx",
+			"args": ["-y", "@willian.dias360/wb-customers-mcp@latest"],
+			"env": {
+				"SERVICE_TOKEN": "1dc087aa-75a6-4880-b85f-531cbb491a35"
+			}
+		}
+	}
+}
