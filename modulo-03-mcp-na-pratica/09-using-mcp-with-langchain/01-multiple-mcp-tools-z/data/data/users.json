@@ -1,0 +1,17 @@
+[
+  {
+    "_id": "6afcf69808f109cdf6a44d15",
+    "name": "João Silva",
+    "phone": "+5511987654321"
+  },
+  {
+    "_id": "6afcf69a08f109cdf6a44d16",
+    "name": "Maria Oliveira",
+    "phone": "+5521912345678"
+  },
+  {
+    "_id": "6afcf69b08f109cdf6a44d17",
+    "name": "Pedro Santos",
+    "phone": "+5531998765432"
+  }
+]

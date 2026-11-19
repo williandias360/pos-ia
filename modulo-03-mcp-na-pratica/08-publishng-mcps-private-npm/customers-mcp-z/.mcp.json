@@ -4,7 +4,7 @@
 			"command": "npx",
 			"args": ["-y", "@willian.dias360/wb-customers-mcp@latest"],
 			"env": {
-				"SERVICE_TOKEN": "1dc087aa-75a6-4880-b85f-531cbb491a35"
+				"SERVICE_TOKEN": "be65f398-0fca-4ff1-a2ce-10159626fb20"
 			}
 		}
 	}
